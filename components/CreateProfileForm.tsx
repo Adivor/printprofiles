@@ -1,11 +1,12 @@
 
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { FilamentProfile, PrinterBrand, FilamentType } from '../types';
 import { PRINTER_BRANDS, FILAMENT_TYPES } from '../constants';
 import { suggestFilamentSettings } from '../services/geminiService';
 import DownloadIcon from './icons/DownloadIcon';
 import ShareIcon from './icons/ShareIcon';
 import MagicIcon from './icons/MagicIcon';
+import ImportIcon from './icons/ImportIcon';
 
 
 interface CreateProfileFormProps {
@@ -27,10 +28,30 @@ const initialProfileState: Omit<FilamentProfile, 'id'> = {
   notes: '',
 };
 
+// Type guard to validate the imported profile structure
+const isValidProfileData = (data: any): data is Omit<FilamentProfile, 'id'> => {
+    return (
+        data &&
+        typeof data.profileName === 'string' &&
+        typeof data.printerBrand === 'string' && PRINTER_BRANDS.includes(data.printerBrand) &&
+        typeof data.filamentBrand === 'string' &&
+        typeof data.filamentType === 'string' && FILAMENT_TYPES.includes(data.filamentType) &&
+        typeof data.filamentDiameter === 'number' &&
+        typeof data.nozzleTemp === 'number' &&
+        typeof data.bedTemp === 'number' &&
+        typeof data.printSpeed === 'number' &&
+        typeof data.retractionDistance === 'number' &&
+        typeof data.retractionSpeed === 'number' &&
+        typeof data.fanSpeed === 'number'
+    );
+};
+
+
 const CreateProfileForm: React.FC<CreateProfileFormProps> = ({ onShare }) => {
   const [profile, setProfile] = useState<Omit<FilamentProfile, 'id'>>(initialProfileState);
   const [isSuggesting, setIsSuggesting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
@@ -56,9 +77,10 @@ const CreateProfileForm: React.FC<CreateProfileFormProps> = ({ onShare }) => {
 
   const downloadJson = () => {
     if (!profile.profileName) {
-        alert("Please provide a profile name before downloading.");
+        setError("Please provide a profile name before downloading.");
         return;
     }
+    setError(null);
     const jsonString = `data:text/json;charset=utf-8,${encodeURIComponent(JSON.stringify({ filament_profile: profile }, null, 2))}`;
     const link = document.createElement('a');
     link.href = jsonString;
@@ -69,15 +91,54 @@ const CreateProfileForm: React.FC<CreateProfileFormProps> = ({ onShare }) => {
 
   const handleShare = () => {
       if (!profile.profileName) {
-        alert("Please provide a profile name before sharing.");
+        setError("Please provide a profile name before sharing.");
         return;
     }
+    setError(null);
     const newProfile: FilamentProfile = {
       ...profile,
       id: `user-${new Date().getTime()}`,
     };
     onShare(newProfile);
     alert("Profile shared to the community tab!");
+  };
+
+  const handleImportClick = () => {
+    fileInputRef.current?.click();
+  };
+
+  const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const text = e.target?.result;
+        if (typeof text !== 'string') {
+          throw new Error("Failed to read file content.");
+        }
+        const parsedJson = JSON.parse(text);
+        const importedProfile = parsedJson.filament_profile;
+
+        if (isValidProfileData(importedProfile)) {
+          setProfile(importedProfile);
+          setError(null); // Clear previous errors
+          alert("Profile imported successfully!");
+        } else {
+          setError("Invalid JSON structure. The file does not match the expected filament profile format.");
+        }
+      } catch (err) {
+        setError("Malformed JSON. The selected file is not a valid JSON file.");
+      }
+    };
+    reader.onerror = () => {
+        setError("An error occurred while reading the file.");
+    }
+    reader.readAsText(file);
+
+    // Reset file input value to allow re-uploading the same file
+    event.target.value = '';
   };
 
   const InputField: React.FC<{label: string, name: keyof typeof initialProfileState, type?: string, value: any, step?: string, children?: React.ReactNode}> = ({ label, name, type = 'text', value, step, children }) => (
@@ -100,9 +161,9 @@ const CreateProfileForm: React.FC<CreateProfileFormProps> = ({ onShare }) => {
   return (
     <div className="space-y-6">
        <h2 className="text-2xl font-bold text-center text-white mb-2">Create a New Filament Profile</h2>
-       <p className="text-center text-gray-400 mb-6">Fill in the details below or use AI to suggest settings for you.</p>
+       <p className="text-center text-gray-400 mb-6">Fill in the details below, use AI to suggest settings, or import an existing profile.</p>
 
-        {error && <div className="bg-red-900/50 border border-red-700 text-red-200 px-4 py-3 rounded-md text-center">{error}</div>}
+        {error && <div className="bg-red-900/50 border border-red-700 text-red-200 px-4 py-3 rounded-md text-center animate-pulse">{error}</div>}
 
        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <InputField label="Profile Name" name="profileName" value={profile.profileName} />
@@ -143,7 +204,8 @@ const CreateProfileForm: React.FC<CreateProfileFormProps> = ({ onShare }) => {
             ></textarea>
         </div>
         
-        <div className="flex flex-col sm:flex-row justify-center items-center gap-4 pt-4">
+        <div className="flex flex-wrap justify-center items-center gap-4 pt-4">
+             <input type="file" ref={fileInputRef} onChange={handleFileChange} accept=".json" className="hidden" />
             <button
                 onClick={handleAISuggest}
                 disabled={isSuggesting}
@@ -157,9 +219,16 @@ const CreateProfileForm: React.FC<CreateProfileFormProps> = ({ onShare }) => {
                 ) : (
                     <>
                         <MagicIcon />
-                        Suggest Settings with AI
+                        Suggest Settings
                     </>
                 )}
+            </button>
+             <button
+                onClick={handleImportClick}
+                className="w-full sm:w-auto flex items-center justify-center gap-2 bg-gray-600 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded-md transition-transform transform hover:scale-105"
+            >
+                <ImportIcon />
+                Import JSON
             </button>
              <button
                 onClick={downloadJson}

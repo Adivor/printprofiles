@@ -1,5 +1,5 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { FilamentProfile } from './types';
 import { PRESET_PROFILES } from './constants';
 import Header from './components/Header';
@@ -10,7 +10,19 @@ type Tab = 'create' | 'community';
 
 const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<Tab>('create');
-  const [communityProfiles, setCommunityProfiles] = useState<FilamentProfile[]>(PRESET_PROFILES);
+  const [communityProfiles, setCommunityProfiles] = useState<FilamentProfile[]>([]);
+  const [isLoadingProfiles, setIsLoadingProfiles] = useState(true);
+
+  useEffect(() => {
+    // Simulate fetching community profiles
+    const timer = setTimeout(() => {
+        setCommunityProfiles(PRESET_PROFILES);
+        setIsLoadingProfiles(false);
+    }, 1500);
+
+    return () => clearTimeout(timer);
+  }, []);
+
 
   const addProfileToCommunity = (profile: FilamentProfile) => {
     setCommunityProfiles(prevProfiles => [profile, ...prevProfiles]);
@@ -41,7 +53,7 @@ const App: React.FC = () => {
 
         <div className="bg-gray-800 rounded-lg shadow-xl p-6">
           {activeTab === 'create' && <CreateProfileForm onShare={addProfileToCommunity} />}
-          {activeTab === 'community' && <CommunityProfiles profiles={communityProfiles} />}
+          {activeTab === 'community' && <CommunityProfiles profiles={communityProfiles} isLoading={isLoadingProfiles} />}
         </div>
         <footer className="text-center mt-8 text-gray-500 text-sm">
           <p>Slicer Profile Generator &copy; 2024. Happy Printing!</p>
